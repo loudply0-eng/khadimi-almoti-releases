@@ -71,6 +71,7 @@ jobs:
         run: |
           $sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE "source"))
           $requested = ($env:REQUESTED_PROJECT ?? "").Trim()
+          if (-not $requested) { $requested = "KhadimiNext.csproj" }
 
           if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
             throw "Private source checkout directory is missing."
@@ -105,6 +106,15 @@ jobs:
           $relative = $project.Substring($sourceRoot.Length).TrimStart('\','/')
           "project_path=$relative" >> $env:GITHUB_OUTPUT
           "Selected private project: $relative"
+
+      - name: Run updater security smoke tests
+        shell: pwsh
+        working-directory: source
+        run: |
+          dotnet run --project tests/UpdateSecurity.Smoke/UpdateSecurity.Smoke.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater security smoke tests failed with exit code $LASTEXITCODE."
+          }
 
       - name: Publish Windows x64 application
         shell: pwsh
