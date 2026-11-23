@@ -41,10 +41,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up .NET 10 SDK
+      - name: Set up the SDK pinned by global.json
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
-          dotnet-version: 10.0.x
+          global-json-file: source/global.json
 
       - name: Validate project structure
         id: project
@@ -71,6 +71,7 @@ jobs:
 
       - name: Restore and build existing application
         shell: pwsh
+        working-directory: source
         env:
           PROJECT_PATH: ${{ steps.project.outputs.project_path }}
         run: |
@@ -87,6 +88,7 @@ jobs:
 
       - name: Publish self-contained single-file Windows x64
         shell: pwsh
+        working-directory: source
         env:
           PROJECT_PATH: ${{ steps.project.outputs.project_path }}
         run: |
