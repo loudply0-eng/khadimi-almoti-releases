@@ -108,6 +108,7 @@ jobs:
 
       - name: Publish Windows x64 application
         shell: pwsh
+        working-directory: source
         env:
           PROJECT_PATH: ${{ steps.project.outputs.project_path }}
         run: |
