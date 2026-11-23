@@ -1,6 +1,6 @@
 name: Khadimi Windows Build
 
-run-name: Khadimi Windows Build #${{ github.run_number }}
+run-name: "Khadimi Windows Build #${{ github.run_number }}"
 
 on:
   workflow_dispatch:
@@ -48,7 +48,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Set up supported .NET SDKs
+      - name: Set up SDK pinned by global.json
+        if: ${{ hashFiles('source/global.json') != '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: source/global.json
+
+      - name: Set up supported .NET SDKs when global.json is absent
+        if: ${{ hashFiles('source/global.json') == '' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: |
