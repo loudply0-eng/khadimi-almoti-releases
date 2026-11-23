@@ -3,6 +3,9 @@ name: Khadimi Windows Build
 run-name: "Khadimi Windows Build #${{ github.run_number }}"
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       source_ref:
@@ -42,7 +45,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: loudply0-eng/khadimi-almoti
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || 'main' }}
           path: source
           ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
           persist-credentials: false
