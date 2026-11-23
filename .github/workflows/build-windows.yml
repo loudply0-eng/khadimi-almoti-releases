@@ -116,7 +116,7 @@ jobs:
           $null = New-Item -ItemType Directory -Path $publishDir -Force
 
           dotnet --info
-          dotnet publish $project --configuration Release --runtime win-x64 --self-contained false --output $publishDir -p:ContinuousIntegrationBuild=true
+          dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $publishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true
           if ($LASTEXITCODE -ne 0) {
             throw "dotnet publish failed with exit code $LASTEXITCODE."
           }
