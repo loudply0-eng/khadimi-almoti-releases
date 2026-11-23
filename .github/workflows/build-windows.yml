@@ -114,7 +114,7 @@ jobs:
         shell: pwsh
         working-directory: source
         run: |
-          dotnet run --project tests/UpdateSecurity.Smoke/UpdateSecurity.Smoke.csproj --configuration Release
+          dotnet run --project tests/UpdateSecurity.Smoke/UpdateSecurity.Smoke.csproj --configuration Release --verbosity minimal -p:ContinuousIntegrationBuild=true
           if ($LASTEXITCODE -ne 0) {
             throw "Updater security smoke tests failed with exit code $LASTEXITCODE."
           }
