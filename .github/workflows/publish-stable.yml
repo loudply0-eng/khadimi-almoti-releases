@@ -131,7 +131,7 @@ jobs:
           retention-days: 1
 
   sign:
-    name: Sign metadata and optionally publish release
+    name: Sign metadata and prepare release assets
     needs: package
     runs-on: windows-latest
     timeout-minutes: 15
