@@ -69,6 +69,23 @@ jobs:
           "project_path=$($projects[0].FullName)" >> $env:GITHUB_OUTPUT
           "Validated WPF project: $($projects[0].Name)"
 
+      - name: Verify data-preservation and privacy safeguards
+        shell: pwsh
+        working-directory: source
+        run: |
+          $store = Get-Content "src/Services/ConversationStore.cs" -Raw
+          $tools = Get-Content "src/Services/ToolExecutor.cs" -Raw
+          $window = Get-Content "MainWindow.xaml.cs" -Raw
+
+          foreach ($pattern in @("PreserveUnreadableFile", "_conversationWritesBlocked", "_settingsWritesBlocked", "File.Move")) {
+            if ($store -notmatch [regex]::Escape($pattern)) { throw "Missing data safeguard: $pattern" }
+          }
+          foreach ($pattern in @("مشاركة معلومات عامة عن جهازك", "مشاركة أسماء البرامج المفتوحة")) {
+            if ($tools -notmatch [regex]::Escape($pattern)) { throw "Missing consent safeguard: $pattern" }
+          }
+          if ($window -notmatch "RecoveryNotice") { throw "MainWindow does not show data-recovery notice." }
+          "Data preservation and privacy safeguards verified."
+
       - name: Restore and build existing application
         shell: pwsh
         working-directory: source
