@@ -1,0 +1,51 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.Local.json
+appsettings.*.Local.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.snk
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+
+# Build outputs and temporary files
+bin/
+obj/
+artifacts/
+publish/
+temp/
+tmp/
+*.tmp
+*.log
+*.bak
+*.old
+
+# User data and local databases
+data/
+userdata/
+conversations/
+logs/
+*.db
+*.sqlite
+*.sqlite3
+*.wal
+*.shm
+
+# Model files
+models/
+*.gguf
+*.onnx
+*.safetensors
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vs/
