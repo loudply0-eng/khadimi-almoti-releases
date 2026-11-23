@@ -119,6 +119,17 @@ jobs:
             throw "Updater security smoke tests failed with exit code $LASTEXITCODE."
           }
 
+      - name: Clean isolated smoke-test outputs
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:GITHUB_WORKSPACE "source\tests\UpdateSecurity.Smoke"
+          foreach ($directoryName in @("bin", "obj")) {
+            $path = Join-Path $testRoot $directoryName
+            if (Test-Path -LiteralPath $path -PathType Container) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
       - name: Publish Windows x64 application
         shell: pwsh
         working-directory: source
