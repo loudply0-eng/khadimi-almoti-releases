@@ -235,7 +235,7 @@ jobs:
               [System.Security.Cryptography.RSASignaturePadding]::Pss
             )
 
-            $pinnedPublicKeyPath = Join-Path $env:GITHUB_WORKSPACE "source\\src\\Resources\\UpdatePublisherPublicKey.pem"
+            $pinnedPublicKeyPath = Join-Path $env:GITHUB_WORKSPACE "source\src\Resources\UpdatePublisherPublicKey.pem"
             if (-not (Test-Path -LiteralPath $pinnedPublicKeyPath -PathType Leaf)) {
               throw "The application-pinned publisher public key is missing."
             }
