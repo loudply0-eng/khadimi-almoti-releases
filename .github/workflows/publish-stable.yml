@@ -352,7 +352,7 @@ jobs:
         env:
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
-          Write-Host "Running disposable updater E2E diagnostics for release ${{ inputs.release_version || '1.0.1' }}."
+          Write-Host "Running disposable updater E2E diagnostics, including explicit success/failure process exit codes for release ${{ inputs.release_version || '1.0.1' }}."
           & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
             -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
             -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
