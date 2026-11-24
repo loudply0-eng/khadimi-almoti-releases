@@ -57,6 +57,20 @@ The application can later retrieve the latest stable manifest from:
 
 https://github.com/loudply0-eng/khadimi-almoti-releases/releases/latest/download/latest.json
 
+## Verified signed preview (2026-11-24)
+
+The first full signed-preview run completed successfully:
+
+- Workflow run: [45319776997](https://github.com/loudply0-eng/khadimi-almoti-releases/actions/runs/45319776997), release preview run #2.
+- Both build and signing jobs completed with success. The application updater-security smoke tests passed **19/19**.
+- The signing job downloaded the unsigned package through GitHub CLI using its job-scoped token and the narrowly scoped `actions:read` permission. No `actions/download-artifact` dependency remains.
+- The job loaded the public PEM from the selected private application source, signed the manifest using RSA-PSS/SHA-256, and logged: `Signed update metadata verified against the public key pinned in the application.`
+- Signed preview artifact: `Khadimi-Signed-Package-2`, artifact ID `14886113988`, 74,762,438 bytes, Actions artifact digest `sha256:ecdad3129673c7c683b68e4718622aa8d691629cf8b4d89b17650fa70ede27ff`.
+- The manifest binds the Windows package (74,743,887 bytes) to SHA-256 `52508c62cfae549fbb3af5f326f0eed2bfa2189d3e7a866e4cf5e7c20f76d616`.
+- `publish_release=false`; the publish job was skipped and no GitHub Release, tag, or public update feed was created.
+
+This confirms the package/signing pipeline and pinned-key match. It does **not** establish that the installed app can retrieve the feed or safely replace itself. The app-side updater integration, helper, backup/rollback, and preservation of existing data and local model/runtime folders remain mandatory release gates.
+
 ## Safety boundaries
 
 - Stable releases are manual; the workflow never publishes a public release automatically on a source push.
