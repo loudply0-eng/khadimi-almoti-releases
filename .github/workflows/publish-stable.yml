@@ -29,6 +29,7 @@ on:
         default: "main"
         type: string
 
+# Validation refresh: exercise private source commit 74092b233f2e855995bd989f112eacae19d8828f on hosted Windows.
 permissions:
   contents: read
 
