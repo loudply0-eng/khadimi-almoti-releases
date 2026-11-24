@@ -75,5 +75,5 @@ This confirms the package/signing pipeline and pinned-key match. It does **not**
 
 - Stable releases are manual; the workflow never publishes a public release automatically on a source push.
 - The signing private key is never available to the build job.
-- The workflow packages only the published application output; it does not clone or include local user data, runtime folders, voice profiles, or AI models.
+- The Windows package contains exactly two root-level executables: `خادمي المطيع.exe` and `KhadimiUpdater.exe`. The isolated helper is required for the verified executable-only apply/rollback flow. The workflow does not package local user data, runtime folders, voice profiles, or AI models.
 - A successful signed preview is not proof that the installed application can safely update itself. The update helper and rollback implementation remain separate release gates.
