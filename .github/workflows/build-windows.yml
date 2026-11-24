@@ -146,9 +146,32 @@ jobs:
             throw "dotnet publish failed with exit code $LASTEXITCODE."
           }
 
+          $helperProject = Join-Path $env:GITHUB_WORKSPACE "source\tools\KhadimiUpdater\KhadimiUpdater.csproj"
+          if (-not (Test-Path -LiteralPath $helperProject -PathType Leaf)) {
+            throw "The isolated updater helper project is missing."
+          }
+
+          $helperPublishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish-helper"
+          $null = New-Item -ItemType Directory -Path $helperPublishDir -Force
+          dotnet publish $helperProject --configuration Release --runtime win-x64 --self-contained true --output $helperPublishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater helper publish failed with exit code $LASTEXITCODE."
+          }
+
+          $applicationExe = Join-Path $publishDir "خادمي المطيع.exe"
+          $helperExe = Join-Path $helperPublishDir "KhadimiUpdater.exe"
+          if (-not (Test-Path -LiteralPath $applicationExe -PathType Leaf)) {
+            throw "The expected single-file application executable is missing."
+          }
+          if (-not (Test-Path -LiteralPath $helperExe -PathType Leaf)) {
+            throw "The expected standalone updater helper executable is missing."
+          }
+
+          Copy-Item -LiteralPath $helperExe -Destination (Join-Path $publishDir "KhadimiUpdater.exe") -Force
+
           $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
-          if ($publishedFiles.Count -eq 0) {
-            throw "Publish completed without producing files."
+          if ($publishedFiles.Count -ne 2) {
+            throw "The update package must contain exactly the application executable and updater helper."
           }
 
           $zipPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\Khadimi-Windows-win-x64.zip"
