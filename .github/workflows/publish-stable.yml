@@ -343,9 +343,9 @@ jobs:
         env:
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
-          & "$env:GITHUB_WORKSPACE\\source\\tests\\UpdateEndToEnd\\Test-UpdateEndToEnd.ps1" `
-            -ReleasePackagePath "$env:GITHUB_WORKSPACE\\release-input\\Khadimi-Windows-win-x64.zip" `
-            -ReleaseManifestPath "$env:GITHUB_WORKSPACE\\release-input\\latest.json" `
+          & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
+            -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
+            -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
             -ReleaseVersion "${{ inputs.release_version }}" `
             -MinimumSupportedVersion "${{ inputs.minimum_supported_version }}"
           if ($LASTEXITCODE -ne 0) {
