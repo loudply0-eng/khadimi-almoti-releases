@@ -184,6 +184,9 @@ jobs:
           retention-days: 1
 
   sign:
+    # The production signing secret must never be exposed to a workflow
+    # definition running from an unreviewed feature branch.
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_ref == 'main' }}
     name: Sign metadata and prepare release assets
     needs: package
     runs-on: windows-latest
@@ -463,4 +466,3 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Release creation failed with exit code $LASTEXITCODE."
           }
-
