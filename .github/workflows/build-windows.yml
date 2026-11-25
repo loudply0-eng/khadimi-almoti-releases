@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: "Private source branch or tag"
+        description: "Private source ref; credentialed builds accept only main"
         required: true
         default: "main"
         type: string
@@ -28,6 +28,9 @@ concurrency:
 jobs:
   build:
     name: Build Windows application
+    # Never expose the private-source credential to a workflow definition from a feature ref,
+    # or use it to check out untrusted private-source branches/tags.
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.source_ref == 'main') }}
     runs-on: windows-latest
     timeout-minutes: 45
 
