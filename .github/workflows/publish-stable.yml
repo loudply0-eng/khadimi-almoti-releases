@@ -73,7 +73,22 @@ jobs:
         run: |
           $sourceDirectory = Join-Path $env:GITHUB_WORKSPACE "source"
           $sourceSha = (git -C $sourceDirectory rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sourceSha.Length -ne 40 -or $sourceSha -notmatch '^[0-9a-f]+        if: ${{ hashFiles('source/global.json') != '' }}
+          $validSha = $sourceSha.Length -eq 40
+          foreach ($character in $sourceSha.ToCharArray()) {
+            $code = [int][char]$character
+            if (($code -lt 48 -or $code -gt 57) -and ($code -lt 97 -or $code -gt 102)) {
+              $validSha = $false
+              break
+            }
+          }
+          if ($LASTEXITCODE -ne 0 -or -not $validSha) {
+            throw "Could not determine the exact private source commit used for the package."
+          }
+          "sha=$sourceSha" >> $env:GITHUB_OUTPUT
+          Write-Host "Building exact private source commit: $sourceSha"
+
+      - name: Set up SDK pinned by global.json
+        if: ${{ hashFiles('source/global.json') != '' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           global-json-file: source/global.json
