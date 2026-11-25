@@ -128,6 +128,11 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
         run: |
+          $versionPattern = '^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$'
+          if ($env:RELEASE_VERSION -notmatch $versionPattern) {
+            throw "Release version must contain three numeric components of at most six digits each."
+          }
+
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
           $null = New-Item -ItemType Directory -Path $publishDir -Force
           $project = Join-Path $env:GITHUB_WORKSPACE "source\KhadimiNext.csproj"
@@ -231,7 +236,7 @@ jobs:
           }
           Write-Host "Package and signing validation use the same private source commit: $actualSha"
 
-      - name: Require protected main source for public publishing
+      - name: Require main refs for public publishing
         if: ${{ inputs.publish_release }}
         shell: pwsh
         env:
@@ -239,7 +244,7 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref || 'feat/safe-update-helper-20261124' }}
         run: |
           if ($env:WORKFLOW_REF -cne "refs/heads/main") {
-            throw "Stable release publishing is permitted only from the protected main workflow ref."
+            throw "Stable release publishing is permitted only from workflow ref refs/heads/main."
           }
           if ($env:SOURCE_REF -cne "main") {
             throw "Stable release publishing must build the private application source ref 'main'; review branches and tags are preview-only."
@@ -270,7 +275,7 @@ jobs:
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $ErrorActionPreference = "Stop"
-          $versionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          $versionPattern = '^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$'
           $releaseVersion = $env:RELEASE_VERSION.Trim()
           $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
 
@@ -395,13 +400,15 @@ jobs:
         working-directory: source
         env:
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
         run: |
-          Write-Host "Running updater E2E after 63 security assertions with native-handle helper exit-code verification and rollback for release ${{ inputs.release_version || '1.0.1' }}."
+          Write-Host "Running updater E2E with 63 security assertions and native-handle rollback checks for release $env:RELEASE_VERSION."
           & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
             -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
             -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
-            -ReleaseVersion "${{ inputs.release_version || '1.0.1' }}" `
-            -MinimumSupportedVersion "${{ inputs.minimum_supported_version || '1.0.0' }}"
+            -ReleaseVersion $env:RELEASE_VERSION `
+            -MinimumSupportedVersion $env:MINIMUM_SUPPORTED_VERSION
           if ($LASTEXITCODE -ne 0) {
             throw "Updater end-to-end validation failed with exit code $LASTEXITCODE."
           }
