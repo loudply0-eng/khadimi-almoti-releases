@@ -38,6 +38,8 @@ concurrency:
 
 jobs:
   package:
+    # Do not expose the private-source read credential to feature-branch workflows.
+    if: ${{ github.ref == 'refs/heads/main' && inputs.source_ref == 'main' }}
     name: Build application package
     runs-on: windows-latest
     timeout-minutes: 45
