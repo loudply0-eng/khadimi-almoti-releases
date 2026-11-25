@@ -196,11 +196,20 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Refuse public publishing from review branches
-        if: ${{ inputs.publish_release && github.ref != 'refs/heads/main' }}
+      - name: Require protected main source for public publishing
+        if: ${{ inputs.publish_release }}
         shell: pwsh
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+          SOURCE_REF: ${{ inputs.source_ref || 'feat/safe-update-helper-20261124' }}
         run: |
-          throw "Stable release publishing is permitted only from the protected main workflow ref."
+          if ($env:WORKFLOW_REF -cne "refs/heads/main") {
+            throw "Stable release publishing is permitted only from the protected main workflow ref."
+          }
+          if ($env:SOURCE_REF -cne "main") {
+            throw "Stable release publishing must build the private application source ref 'main'; review branches and tags are preview-only."
+          }
+          Write-Host "Public release source gate passed: workflow ref and private source ref are both main."
 
       - name: Set up SDK pinned by global.json
         if: ${{ hashFiles('source/global.json') != '' }}
@@ -381,7 +390,7 @@ jobs:
           retention-days: 7
   publish:
     name: Publish verified stable release
-    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' && inputs.source_ref == 'main' }}
     needs: sign
     runs-on: windows-latest
     timeout-minutes: 10
