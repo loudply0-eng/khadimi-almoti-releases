@@ -403,7 +403,7 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
           MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
         run: |
-          Write-Host "Running updater E2E with 63 security assertions and native-handle rollback checks for release $env:RELEASE_VERSION."
+          Write-Host "Running updater E2E with 65 security assertions including Windows ZIP reparse/device attributes and native-handle rollback checks for release $env:RELEASE_VERSION."
           & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
             -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
             -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
