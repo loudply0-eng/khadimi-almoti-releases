@@ -71,8 +71,747 @@ jobs:
         id: source_commit
         shell: pwsh
         run: |
-          $sourceSha = (git -C "$env:GITHUB_WORKSPACE\source" rev-parse HEAD).Trim()
-          if ($LASTEXITCODE -ne 0 -or $sourceSha -notmatch '^[0-9a-f]{40}      - name: Set up SDK pinned by global.json
+          $sourceDirectory = Join-Path $env:GITHUB_WORKSPACE "source"
+          $sourceSha = (git -C $sourceDirectory rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceSha.Length -ne 40 -or $sourceSha -notmatch '^[0-9a-f]+        if: ${{ hashFiles('source/global.json') != '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: source/global.json
+
+      - name: Set up supported .NET SDKs when global.json is absent
+        if: ${{ hashFiles('source/global.json') == '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Run updater security smoke tests
+        shell: pwsh
+        working-directory: source
+        run: |
+          dotnet run --project tests/UpdateSecurity.Smoke/UpdateSecurity.Smoke.csproj --configuration Release --verbosity minimal -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater security smoke tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Clean isolated smoke-test outputs
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:GITHUB_WORKSPACE "source\tests\UpdateSecurity.Smoke"
+          foreach ($directoryName in @("bin", "obj")) {
+            $path = Join-Path $testRoot $directoryName
+            if (Test-Path -LiteralPath $path -PathType Container) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Publish Windows x64 package
+        shell: pwsh
+        working-directory: source
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+        run: |
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
+          $null = New-Item -ItemType Directory -Path $publishDir -Force
+          $project = Join-Path $env:GITHUB_WORKSPACE "source\KhadimiNext.csproj"
+
+          dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $publishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet publish failed with exit code $LASTEXITCODE."
+          }
+
+          $helperProject = Join-Path $env:GITHUB_WORKSPACE "source\tools\KhadimiUpdater\KhadimiUpdater.csproj"
+          if (-not (Test-Path -LiteralPath $helperProject -PathType Leaf)) {
+            throw "The isolated updater helper project is missing."
+          }
+
+          $helperPublishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish-helper"
+          $null = New-Item -ItemType Directory -Path $helperPublishDir -Force
+          dotnet publish $helperProject --configuration Release --runtime win-x64 --self-contained true --output $helperPublishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater helper publish failed with exit code $LASTEXITCODE."
+          }
+
+          $applicationExe = Join-Path $publishDir "خادمي المطيع.exe"
+          $helperExe = Join-Path $helperPublishDir "KhadimiUpdater.exe"
+          if (-not (Test-Path -LiteralPath $applicationExe -PathType Leaf)) {
+            throw "The expected single-file application executable is missing."
+          }
+          if (-not (Test-Path -LiteralPath $helperExe -PathType Leaf)) {
+            throw "The expected standalone updater helper executable is missing."
+          }
+
+          Copy-Item -LiteralPath $helperExe -Destination (Join-Path $publishDir "KhadimiUpdater.exe") -Force
+          $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
+          if ($publishedFiles.Count -ne 2) {
+            throw "The update package must contain exactly the application executable and updater helper."
+          }
+
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\Khadimi-Windows-win-x64.zip"
+          Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -CompressionLevel Optimal -Force
+          if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
+            throw "The Windows package archive was not created."
+          }
+
+      - name: Upload unsigned package for isolated signing job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: khadimi-windows-package
+          path: artifacts/Khadimi-Windows-win-x64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign metadata and prepare release assets
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Download package from isolated build job
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "release-input"
+          $null = New-Item -ItemType Directory -Path $downloadDir -Force
+          gh run download $env:GITHUB_RUN_ID --repo loudply0-eng/khadimi-almoti-releases --name khadimi-windows-package --dir $downloadDir
+          if ($LASTEXITCODE -ne 0) {
+            throw "Downloading the isolated Windows package artifact failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Verify private-source key is configured
+        shell: pwsh
+        env:
+          SOURCE_READ_KEY: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOURCE_READ_KEY)) {
+            throw "Missing repository secret KHADIMI_SOURCE_READ_KEY."
+          }
+
+      - name: Checkout exact private source commit used for package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          repository: loudply0-eng/khadimi-almoti
+          ref: ${{ needs.package.outputs.source_sha }}
+          path: source
+          ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify package and signing source commits match
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.package.outputs.source_sha }}
+        run: |
+          $actualSha = (git -C "$env:GITHUB_WORKSPACE\source" rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actualSha -cne $env:EXPECTED_SOURCE_SHA) {
+            throw "The signing source checkout does not match the exact source commit used to build the package."
+          }
+          Write-Host "Package and signing validation use the same private source commit: $actualSha"
+
+      - name: Require protected main source for public publishing
+        if: ${{ inputs.publish_release }}
+        shell: pwsh
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+          SOURCE_REF: ${{ inputs.source_ref || 'feat/safe-update-helper-20261124' }}
+        run: |
+          if ($env:WORKFLOW_REF -cne "refs/heads/main") {
+            throw "Stable release publishing is permitted only from the protected main workflow ref."
+          }
+          if ($env:SOURCE_REF -cne "main") {
+            throw "Stable release publishing must build the private application source ref 'main'; review branches and tags are preview-only."
+          }
+          Write-Host "Public release source gate passed: workflow ref and private source ref are both main."
+
+      - name: Set up SDK pinned by global.json
+        if: ${{ hashFiles('source/global.json') != '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: source/global.json
+
+      - name: Set up supported .NET SDKs when global.json is absent
+        if: ${{ hashFiles('source/global.json') == '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Generate and verify signed update metadata
+        id: metadata
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
+          SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $versionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          $releaseVersion = $env:RELEASE_VERSION.Trim()
+          $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
+
+          if ($releaseVersion -notmatch $versionPattern -or $minimumVersion -notmatch $versionPattern) {
+            throw "Release versions must use three numeric components, such as 1.0.1."
+          }
+          if ([Version]::Parse($releaseVersion) -lt [Version]::Parse($minimumVersion)) {
+            throw "The release version cannot be below minimum_supported_version."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY_PEM)) {
+            throw "Missing repository secret KHADIMI_RELEASE_SIGNING_KEY."
+          }
+
+          $packagePath = Join-Path $env:GITHUB_WORKSPACE "release-input\Khadimi-Windows-win-x64.zip"
+          if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+            throw "The expected Windows x64 package is missing."
+          }
+
+          $package = Get-Item -LiteralPath $packagePath
+          if ($package.Length -lt 1 -or $package.Length -gt 1GB) {
+            throw "The Windows package size is outside the allowed range."
+          }
+
+          $sha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sizeBytes = [long]$package.Length
+          $sizeText = $sizeBytes.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+          $tag = "v$releaseVersion"
+          $publishedUtc = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [System.Globalization.CultureInfo]::InvariantCulture)
+          $downloadUrl = "https://github.com/loudply0-eng/khadimi-almoti-releases/releases/download/$tag/Khadimi-Windows-win-x64.zip"
+
+          $fields = @(
+            "KhadimiUpdateManifestV1",
+            "schemaVersion=1",
+            "applicationId=KhadimiNext",
+            "channel=stable",
+            "version=$releaseVersion",
+            "publishedUtc=$publishedUtc",
+            "downloadUrl=$downloadUrl",
+            "fileName=Khadimi-Windows-win-x64.zip",
+            "sizeBytes=$sizeText",
+            "sha256=$sha256",
+            "minimumSupportedVersion=$minimumVersion"
+          )
+          $payloadText = ($fields -join "`n") + "`n"
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          $payloadBytes = $utf8.GetBytes($payloadText)
+
+          $rsa = [System.Security.Cryptography.RSA]::Create()
+          $verifier = $null
+          try {
+            $rsa.ImportFromPem($env:SIGNING_KEY_PEM)
+            if ($rsa.KeySize -lt 3072 -or $rsa.KeySize -gt 8192) {
+              throw "The release signing key must be between 3072 and 8192 bits."
+            }
+
+            $signatureBytes = $rsa.SignData(
+              $payloadBytes,
+              [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+              [System.Security.Cryptography.RSASignaturePadding]::Pss
+            )
+
+            $pinnedPublicKeyPath = Join-Path $env:GITHUB_WORKSPACE "source\src\Resources\UpdatePublisherPublicKey.pem"
+            if (-not (Test-Path -LiteralPath $pinnedPublicKeyPath -PathType Leaf)) {
+              throw "The application-pinned publisher public key is missing."
+            }
+
+            $pinnedPublicKeyPem = [System.IO.File]::ReadAllText($pinnedPublicKeyPath)
+            $verifier = [System.Security.Cryptography.RSA]::Create()
+            $verifier.ImportFromPem($pinnedPublicKeyPem)
+            if ($verifier.KeySize -ne $rsa.KeySize -or $verifier.KeySize -lt 3072) {
+              throw "The signing secret does not match the RSA key pinned in the application."
+            }
+
+            if (-not $verifier.VerifyData(
+              $payloadBytes,
+              $signatureBytes,
+              [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+              [System.Security.Cryptography.RSASignaturePadding]::Pss
+            )) {
+              throw "The signature did not verify with the public key pinned in the application."
+            }
+          }
+          finally {
+            if ($verifier) { $verifier.Dispose() }
+            $rsa.Dispose()
+          }
+
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            applicationId = "KhadimiNext"
+            channel = "stable"
+            version = $releaseVersion
+            publishedUtc = $publishedUtc
+            downloadUrl = $downloadUrl
+            fileName = "Khadimi-Windows-win-x64.zip"
+            sizeBytes = $sizeBytes
+            sha256 = $sha256
+            minimumSupportedVersion = $minimumVersion
+            signature = [Convert]::ToBase64String($signatureBytes)
+          }
+
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE "release-input\latest.json"
+          $manifestJson = $manifest | ConvertTo-Json -Depth 4
+          [System.IO.File]::WriteAllText($manifestPath, $manifestJson + "`n", $utf8)
+
+          $sumsPath = Join-Path $env:GITHUB_WORKSPACE "release-input\SHA256SUMS.txt"
+          [System.IO.File]::WriteAllText(
+            $sumsPath,
+            "$sha256  Khadimi-Windows-win-x64.zip`n",
+            [System.Text.Encoding]::ASCII
+          )
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$releaseVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Signed update metadata verified against the public key pinned in the application."
+          Write-Host "Package size: $sizeText bytes"
+          Write-Host "Package SHA-256: $sha256"
+          Write-Host "Metadata file: latest.json"
+
+      - name: Validate updater apply and rollback in disposable Windows installs
+        shell: pwsh
+        working-directory: source
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
+        run: |
+          Write-Host "Running updater E2E after 63 security assertions with native-handle helper exit-code verification and rollback for release ${{ inputs.release_version || '1.0.1' }}."
+          & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
+            -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
+            -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
+            -ReleaseVersion "${{ inputs.release_version || '1.0.1' }}" `
+            -MinimumSupportedVersion "${{ inputs.minimum_supported_version || '1.0.0' }}"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater end-to-end validation failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Mark run as signed preview only
+        if: ${{ !inputs.publish_release }}
+        shell: pwsh
+        run: |
+          Write-Host "SIGNED PREVIEW ONLY: no GitHub Release or public update feed was published."
+          Write-Host "The signature was checked against the application public key; complete the remaining update safety gates before publishing."
+
+      - name: Upload signed package and metadata for inspection
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: Khadimi-Signed-Package-${{ github.run_number }}
+          path: |
+            release-input/Khadimi-Windows-win-x64.zip
+            release-input/SHA256SUMS.txt
+            release-input/latest.json
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    name: Publish verified stable release
+    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' && inputs.source_ref == 'main' }}
+    needs: sign
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download signed release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          $null = New-Item -ItemType Directory -Path $downloadDir -Force
+          gh run download $env:GITHUB_RUN_ID --repo loudply0-eng/khadimi-almoti-releases --name "Khadimi-Signed-Package-${{ github.run_number }}" --dir $downloadDir
+          if ($LASTEXITCODE -ne 0) {
+            throw "Downloading the signed release artifact failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Create GitHub stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.1' }}
+        run: |
+          gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+          }
+
+) {
+            throw "Could not determine the exact private source commit used for the package."
+          }
+          "sha=$sourceSha" >> $env:GITHUB_OUTPUT
+          Write-Host "Building exact private source commit: $sourceSha"
+
+      - name: Set up SDK pinned by global.json
+        if: ${{ hashFiles('source/global.json') != '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: source/global.json
+
+      - name: Set up supported .NET SDKs when global.json is absent
+        if: ${{ hashFiles('source/global.json') == '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Run updater security smoke tests
+        shell: pwsh
+        working-directory: source
+        run: |
+          dotnet run --project tests/UpdateSecurity.Smoke/UpdateSecurity.Smoke.csproj --configuration Release --verbosity minimal -p:ContinuousIntegrationBuild=true
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater security smoke tests failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Clean isolated smoke-test outputs
+        shell: pwsh
+        run: |
+          $testRoot = Join-Path $env:GITHUB_WORKSPACE "source\tests\UpdateSecurity.Smoke"
+          foreach ($directoryName in @("bin", "obj")) {
+            $path = Join-Path $testRoot $directoryName
+            if (Test-Path -LiteralPath $path -PathType Container) {
+              Remove-Item -LiteralPath $path -Recurse -Force
+            }
+          }
+
+      - name: Publish Windows x64 package
+        shell: pwsh
+        working-directory: source
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+        run: |
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
+          $null = New-Item -ItemType Directory -Path $publishDir -Force
+          $project = Join-Path $env:GITHUB_WORKSPACE "source\KhadimiNext.csproj"
+
+          dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $publishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet publish failed with exit code $LASTEXITCODE."
+          }
+
+          $helperProject = Join-Path $env:GITHUB_WORKSPACE "source\tools\KhadimiUpdater\KhadimiUpdater.csproj"
+          if (-not (Test-Path -LiteralPath $helperProject -PathType Leaf)) {
+            throw "The isolated updater helper project is missing."
+          }
+
+          $helperPublishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish-helper"
+          $null = New-Item -ItemType Directory -Path $helperPublishDir -Force
+          dotnet publish $helperProject --configuration Release --runtime win-x64 --self-contained true --output $helperPublishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater helper publish failed with exit code $LASTEXITCODE."
+          }
+
+          $applicationExe = Join-Path $publishDir "خادمي المطيع.exe"
+          $helperExe = Join-Path $helperPublishDir "KhadimiUpdater.exe"
+          if (-not (Test-Path -LiteralPath $applicationExe -PathType Leaf)) {
+            throw "The expected single-file application executable is missing."
+          }
+          if (-not (Test-Path -LiteralPath $helperExe -PathType Leaf)) {
+            throw "The expected standalone updater helper executable is missing."
+          }
+
+          Copy-Item -LiteralPath $helperExe -Destination (Join-Path $publishDir "KhadimiUpdater.exe") -Force
+          $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
+          if ($publishedFiles.Count -ne 2) {
+            throw "The update package must contain exactly the application executable and updater helper."
+          }
+
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\Khadimi-Windows-win-x64.zip"
+          Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -CompressionLevel Optimal -Force
+          if (-not (Test-Path -LiteralPath $zipPath -PathType Leaf)) {
+            throw "The Windows package archive was not created."
+          }
+
+      - name: Upload unsigned package for isolated signing job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: khadimi-windows-package
+          path: artifacts/Khadimi-Windows-win-x64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign metadata and prepare release assets
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Download package from isolated build job
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "release-input"
+          $null = New-Item -ItemType Directory -Path $downloadDir -Force
+          gh run download $env:GITHUB_RUN_ID --repo loudply0-eng/khadimi-almoti-releases --name khadimi-windows-package --dir $downloadDir
+          if ($LASTEXITCODE -ne 0) {
+            throw "Downloading the isolated Windows package artifact failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Verify private-source key is configured
+        shell: pwsh
+        env:
+          SOURCE_READ_KEY: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SOURCE_READ_KEY)) {
+            throw "Missing repository secret KHADIMI_SOURCE_READ_KEY."
+          }
+
+      - name: Checkout application source to obtain its pinned public key
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+        with:
+          repository: loudply0-eng/khadimi-almoti
+          ref: ${{ inputs.source_ref || 'feat/safe-update-helper-20261124' }}
+          path: source
+          ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require protected main source for public publishing
+        if: ${{ inputs.publish_release }}
+        shell: pwsh
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+          SOURCE_REF: ${{ inputs.source_ref || 'feat/safe-update-helper-20261124' }}
+        run: |
+          if ($env:WORKFLOW_REF -cne "refs/heads/main") {
+            throw "Stable release publishing is permitted only from the protected main workflow ref."
+          }
+          if ($env:SOURCE_REF -cne "main") {
+            throw "Stable release publishing must build the private application source ref 'main'; review branches and tags are preview-only."
+          }
+          Write-Host "Public release source gate passed: workflow ref and private source ref are both main."
+
+      - name: Set up SDK pinned by global.json
+        if: ${{ hashFiles('source/global.json') != '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          global-json-file: source/global.json
+
+      - name: Set up supported .NET SDKs when global.json is absent
+        if: ${{ hashFiles('source/global.json') == '' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Generate and verify signed update metadata
+        id: metadata
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
+          SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $versionPattern = '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          $releaseVersion = $env:RELEASE_VERSION.Trim()
+          $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
+
+          if ($releaseVersion -notmatch $versionPattern -or $minimumVersion -notmatch $versionPattern) {
+            throw "Release versions must use three numeric components, such as 1.0.1."
+          }
+          if ([Version]::Parse($releaseVersion) -lt [Version]::Parse($minimumVersion)) {
+            throw "The release version cannot be below minimum_supported_version."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY_PEM)) {
+            throw "Missing repository secret KHADIMI_RELEASE_SIGNING_KEY."
+          }
+
+          $packagePath = Join-Path $env:GITHUB_WORKSPACE "release-input\Khadimi-Windows-win-x64.zip"
+          if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+            throw "The expected Windows x64 package is missing."
+          }
+
+          $package = Get-Item -LiteralPath $packagePath
+          if ($package.Length -lt 1 -or $package.Length -gt 1GB) {
+            throw "The Windows package size is outside the allowed range."
+          }
+
+          $sha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sizeBytes = [long]$package.Length
+          $sizeText = $sizeBytes.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+          $tag = "v$releaseVersion"
+          $publishedUtc = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [System.Globalization.CultureInfo]::InvariantCulture)
+          $downloadUrl = "https://github.com/loudply0-eng/khadimi-almoti-releases/releases/download/$tag/Khadimi-Windows-win-x64.zip"
+
+          $fields = @(
+            "KhadimiUpdateManifestV1",
+            "schemaVersion=1",
+            "applicationId=KhadimiNext",
+            "channel=stable",
+            "version=$releaseVersion",
+            "publishedUtc=$publishedUtc",
+            "downloadUrl=$downloadUrl",
+            "fileName=Khadimi-Windows-win-x64.zip",
+            "sizeBytes=$sizeText",
+            "sha256=$sha256",
+            "minimumSupportedVersion=$minimumVersion"
+          )
+          $payloadText = ($fields -join "`n") + "`n"
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          $payloadBytes = $utf8.GetBytes($payloadText)
+
+          $rsa = [System.Security.Cryptography.RSA]::Create()
+          $verifier = $null
+          try {
+            $rsa.ImportFromPem($env:SIGNING_KEY_PEM)
+            if ($rsa.KeySize -lt 3072 -or $rsa.KeySize -gt 8192) {
+              throw "The release signing key must be between 3072 and 8192 bits."
+            }
+
+            $signatureBytes = $rsa.SignData(
+              $payloadBytes,
+              [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+              [System.Security.Cryptography.RSASignaturePadding]::Pss
+            )
+
+            $pinnedPublicKeyPath = Join-Path $env:GITHUB_WORKSPACE "source\src\Resources\UpdatePublisherPublicKey.pem"
+            if (-not (Test-Path -LiteralPath $pinnedPublicKeyPath -PathType Leaf)) {
+              throw "The application-pinned publisher public key is missing."
+            }
+
+            $pinnedPublicKeyPem = [System.IO.File]::ReadAllText($pinnedPublicKeyPath)
+            $verifier = [System.Security.Cryptography.RSA]::Create()
+            $verifier.ImportFromPem($pinnedPublicKeyPem)
+            if ($verifier.KeySize -ne $rsa.KeySize -or $verifier.KeySize -lt 3072) {
+              throw "The signing secret does not match the RSA key pinned in the application."
+            }
+
+            if (-not $verifier.VerifyData(
+              $payloadBytes,
+              $signatureBytes,
+              [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+              [System.Security.Cryptography.RSASignaturePadding]::Pss
+            )) {
+              throw "The signature did not verify with the public key pinned in the application."
+            }
+          }
+          finally {
+            if ($verifier) { $verifier.Dispose() }
+            $rsa.Dispose()
+          }
+
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            applicationId = "KhadimiNext"
+            channel = "stable"
+            version = $releaseVersion
+            publishedUtc = $publishedUtc
+            downloadUrl = $downloadUrl
+            fileName = "Khadimi-Windows-win-x64.zip"
+            sizeBytes = $sizeBytes
+            sha256 = $sha256
+            minimumSupportedVersion = $minimumVersion
+            signature = [Convert]::ToBase64String($signatureBytes)
+          }
+
+          $manifestPath = Join-Path $env:GITHUB_WORKSPACE "release-input\latest.json"
+          $manifestJson = $manifest | ConvertTo-Json -Depth 4
+          [System.IO.File]::WriteAllText($manifestPath, $manifestJson + "`n", $utf8)
+
+          $sumsPath = Join-Path $env:GITHUB_WORKSPACE "release-input\SHA256SUMS.txt"
+          [System.IO.File]::WriteAllText(
+            $sumsPath,
+            "$sha256  Khadimi-Windows-win-x64.zip`n",
+            [System.Text.Encoding]::ASCII
+          )
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$releaseVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Signed update metadata verified against the public key pinned in the application."
+          Write-Host "Package size: $sizeText bytes"
+          Write-Host "Package SHA-256: $sha256"
+          Write-Host "Metadata file: latest.json"
+
+      - name: Validate updater apply and rollback in disposable Windows installs
+        shell: pwsh
+        working-directory: source
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
+        run: |
+          Write-Host "Running updater E2E after 63 security assertions with native-handle helper exit-code verification and rollback for release ${{ inputs.release_version || '1.0.1' }}."
+          & "$env:GITHUB_WORKSPACE\source\tests\UpdateEndToEnd\Test-UpdateEndToEnd.ps1" `
+            -ReleasePackagePath "$env:GITHUB_WORKSPACE\release-input\Khadimi-Windows-win-x64.zip" `
+            -ReleaseManifestPath "$env:GITHUB_WORKSPACE\release-input\latest.json" `
+            -ReleaseVersion "${{ inputs.release_version || '1.0.1' }}" `
+            -MinimumSupportedVersion "${{ inputs.minimum_supported_version || '1.0.0' }}"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Updater end-to-end validation failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Mark run as signed preview only
+        if: ${{ !inputs.publish_release }}
+        shell: pwsh
+        run: |
+          Write-Host "SIGNED PREVIEW ONLY: no GitHub Release or public update feed was published."
+          Write-Host "The signature was checked against the application public key; complete the remaining update safety gates before publishing."
+
+      - name: Upload signed package and metadata for inspection
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v4.6.2
+        with:
+          name: Khadimi-Signed-Package-${{ github.run_number }}
+          path: |
+            release-input/Khadimi-Windows-win-x64.zip
+            release-input/SHA256SUMS.txt
+            release-input/latest.json
+          if-no-files-found: error
+          retention-days: 7
+  publish:
+    name: Publish verified stable release
+    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' && inputs.source_ref == 'main' }}
+    needs: sign
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download signed release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $downloadDir = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          $null = New-Item -ItemType Directory -Path $downloadDir -Force
+          gh run download $env:GITHUB_RUN_ID --repo loudply0-eng/khadimi-almoti-releases --name "Khadimi-Signed-Package-${{ github.run_number }}" --dir $downloadDir
+          if ($LASTEXITCODE -ne 0) {
+            throw "Downloading the signed release artifact failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Create GitHub stable release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.1' }}
+        run: |
+          gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release creation failed with exit code $LASTEXITCODE."
+          }
+
+) {
+            throw "Could not determine the exact private source commit used for the package."
+          }
+          "sha=$sourceSha" >> $env:GITHUB_OUTPUT
+          Write-Host "Building exact private source commit: $sourceSha"
+
+      - name: Set up SDK pinned by global.json
         if: ${{ hashFiles('source/global.json') != '' }}
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
