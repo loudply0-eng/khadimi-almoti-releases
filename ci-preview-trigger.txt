@@ -6,3 +6,4 @@ Clean-preview rerun after shortening the successful smoke-app lifetime and waiti
 Rebuild preview after adding signed minimumSupportedVersion enforcement and policy smoke tests.
 Rebuild signed Windows preview after adding independent updater compatibility-floor enforcement and incompatible-client no-change integration test.
 Re-run signed Windows preview with strict assertion for the exact minimum-supported-version rejection log.
+Verify that signed preview workflows remain non-publishing and that Stable publication is restricted to refs/heads/main.
