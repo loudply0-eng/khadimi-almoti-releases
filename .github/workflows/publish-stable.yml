@@ -347,23 +347,6 @@ jobs:
             throw "The Windows updater integration smoke tests failed with exit code $LASTEXITCODE."
           }
 
-      - name: Run signed installer apply and rollback integration smoke tests
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
-          SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
-        run: |
-          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "source"
-          $packagePath = Join-Path $env:GITHUB_WORKSPACE "release-input\Khadimi-Windows-win-x64.zip"
-          $testScript = Join-Path $sourceRoot "tests\UpdateInstaller.IntegrationSmoke.ps1"
-          if (-not (Test-Path -LiteralPath $testScript -PathType Leaf)) {
-            throw "The Windows updater integration smoke script is missing."
-          }
-          & $testScript -SourceRoot $sourceRoot -ReleaseVersion $env:RELEASE_VERSION -SigningKeyPem $env:SIGNING_KEY_PEM -PublishedPackagePath $packagePath
-          if ($LASTEXITCODE -ne 0) {
-            throw "The Windows updater integration smoke tests failed with exit code $LASTEXITCODE."
-          }
-
       - name: Mark run as signed preview only
         if: ${{ !inputs.publish_release }}
         shell: pwsh
