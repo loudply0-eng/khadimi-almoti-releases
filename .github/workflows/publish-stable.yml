@@ -366,7 +366,9 @@ jobs:
           retention-days: 7
   publish:
     name: Publish verified stable release
-    if: ${{ inputs.publish_release }}
+    # Stable publication is only permitted from the protected default branch.
+    # Preview branches may build and sign artifacts but can never publish Stable.
+    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' }}
     needs: sign
     runs-on: windows-latest
     timeout-minutes: 10
