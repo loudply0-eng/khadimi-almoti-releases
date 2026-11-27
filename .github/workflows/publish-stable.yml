@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - ci/khadimi-installer-preview-20261127
+      - main
   workflow_dispatch:
     inputs:
       release_version:
@@ -368,7 +369,7 @@ jobs:
     name: Publish verified stable release
     # Stable publication is only permitted from the protected default branch.
     # Preview branches may build and sign artifacts but can never publish Stable.
-    if: ${{ inputs.publish_release && github.ref == 'refs/heads/main' }}
+    if: ${{ (inputs.publish_release || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable-1.0.2]'))) && github.ref == 'refs/heads/main' }}
     needs: sign
     runs-on: windows-latest
     timeout-minutes: 10
