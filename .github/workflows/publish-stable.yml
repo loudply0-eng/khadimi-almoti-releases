@@ -1,6 +1,6 @@
 name: Build and Sign Stable Release
 
-run-name: "Khadimi signed preview ${{ inputs.release_version || '1.0.1' }}"
+run-name: "Khadimi signed preview ${{ inputs.release_version || '1.0.2' }}"
 
 on:
   push:
@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: "Three-part release version, for example 1.0.1"
+        description: "Three-part release version, for example 1.0.2"
         required: true
-        default: "1.0.1"
+        default: "1.0.2"
         type: string
       minimum_supported_version:
         description: "Oldest application version allowed to accept this update"
@@ -103,7 +103,7 @@ jobs:
         shell: pwsh
         working-directory: source
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
         run: |
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
           $null = New-Item -ItemType Directory -Path $publishDir -Force
@@ -205,7 +205,7 @@ jobs:
         id: metadata
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
           MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
@@ -215,7 +215,7 @@ jobs:
           $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
 
           if ($releaseVersion -notmatch $versionPattern -or $minimumVersion -notmatch $versionPattern) {
-            throw "Release versions must use three numeric components, such as 1.0.1."
+            throw "Release versions must use three numeric components, such as 1.0.2."
           }
           if ([Version]::Parse($releaseVersion) -lt [Version]::Parse($minimumVersion)) {
             throw "The release version cannot be below minimum_supported_version."
@@ -333,7 +333,7 @@ jobs:
       - name: Run signed installer apply and rollback integration smoke tests
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "source"
@@ -393,7 +393,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ inputs.release_version || '1.0.1' }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.2' }}
         run: |
           gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
           if ($LASTEXITCODE -ne 0) {
