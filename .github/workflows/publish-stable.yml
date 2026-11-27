@@ -1,3 +1,4 @@
+# Integration smoke tests use an isolated temporary worker for each scenario.
 # Official stable 1.0.3 package: the updater is embedded in the application executable.
 name: Build and Sign Stable Release
 
