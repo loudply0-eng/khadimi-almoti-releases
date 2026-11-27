@@ -1,3 +1,4 @@
+# Re-test safe creation of files and folders after path hardening.
 # Integration smoke tests use an isolated temporary worker for each scenario.
 # Windows productivity tools 1.0.5 preview: the updater is embedded in the application executable.
 name: Build and Sign Stable Release
