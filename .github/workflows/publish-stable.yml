@@ -1,8 +1,8 @@
 # Integration smoke tests use an isolated temporary worker for each scenario.
-# Official stable 1.0.4 package: the updater is embedded in the application executable.
+# Official stable 1.0.5 package: the in-app update centre includes resumable downloads and no separate updater executable: the updater is embedded in the application executable.
 name: Build and Sign Stable Release
 
-run-name: "Khadimi Stable Release ${{ inputs.release_version || '1.0.4' }}"
+run-name: "Khadimi Stable Release ${{ inputs.release_version || '1.0.5' }}"
 
 on:
   push:
@@ -14,7 +14,7 @@ on:
       release_version:
         description: "Official stable release version"
         required: true
-        default: "1.0.4"
+        default: "1.0.5"
         type: string
       minimum_supported_version:
         description: "Oldest application version allowed to accept this update"
@@ -106,7 +106,7 @@ jobs:
         shell: pwsh
         working-directory: source
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.4' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.5' }}
         run: |
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
           $null = New-Item -ItemType Directory -Path $publishDir -Force
@@ -191,7 +191,7 @@ jobs:
         id: metadata
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.4' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.5' }}
           MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.3' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
@@ -201,7 +201,7 @@ jobs:
           $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
 
           if ($releaseVersion -notmatch $versionPattern -or $minimumVersion -notmatch $versionPattern) {
-            throw "Release versions must use three numeric components, such as 1.0.4."
+            throw "Release versions must use three numeric components, such as 1.0.5."
           }
           if ([Version]::Parse($releaseVersion) -lt [Version]::Parse($minimumVersion)) {
             throw "The release version cannot be below minimum_supported_version."
@@ -319,7 +319,7 @@ jobs:
       - name: Run signed installer apply and rollback integration smoke tests
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.4' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.5' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "source"
@@ -354,7 +354,7 @@ jobs:
     name: Publish verified stable release
     # Stable publication is only permitted from the protected default branch.
     # Preview branches may build and sign artifacts but can never publish Stable.
-    if: ${{ (inputs.publish_release || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable-1.0.4]'))) && github.ref == 'refs/heads/main' }}
+    if: ${{ (inputs.publish_release || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable-1.0.5]'))) && github.ref == 'refs/heads/main' }}
     needs: sign
     runs-on: windows-latest
     timeout-minutes: 10
@@ -379,7 +379,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ inputs.release_version || '1.0.4' }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.5' }}
         run: |
           gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
           if ($LASTEXITCODE -ne 0) {
