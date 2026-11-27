@@ -2,3 +2,4 @@ Preview build trigger for private Khadimi installer branch feat/verified-in-app-
 Windows install/rollback integration smoke tests are enabled.
 No stable release is published by this workflow run.
 Retry installer integration smoke after correcting PowerShell dotnet-publish output capture.
+Clean-preview rerun after shortening the successful smoke-app lifetime and waiting for rollback test process cleanup.
