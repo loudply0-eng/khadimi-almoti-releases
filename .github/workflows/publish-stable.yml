@@ -1,8 +1,11 @@
 name: Build and Sign Stable Release
 
-run-name: "Khadimi stable release ${{ inputs.release_version }}"
+run-name: "Khadimi signed preview ${{ inputs.release_version || '1.0.1' }}"
 
 on:
+  push:
+    branches:
+      - ci/khadimi-installer-preview-20261127
   workflow_dispatch:
     inputs:
       release_version:
@@ -55,7 +58,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           repository: loudply0-eng/khadimi-almoti
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || 'feat/verified-in-app-installer-20261126' }}
           path: source
           ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
           persist-credentials: false
@@ -100,7 +103,7 @@ jobs:
         shell: pwsh
         working-directory: source
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
         run: |
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
           $null = New-Item -ItemType Directory -Path $publishDir -Force
@@ -187,7 +190,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           repository: loudply0-eng/khadimi-almoti
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || 'feat/verified-in-app-installer-20261126' }}
           path: source
           ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
           persist-credentials: false
@@ -197,8 +200,8 @@ jobs:
         id: metadata
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.1' }}
+          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -366,7 +369,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ inputs.release_version }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.1' }}
         run: |
           gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
           if ($LASTEXITCODE -ne 0) {
