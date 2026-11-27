@@ -1,3 +1,4 @@
+# Re-run deep research preview after correcting the planner smoke-test JSON literal.
 # Integration smoke tests use an isolated temporary worker for each scenario.
 # Isolated deep-research 1.0.6 preview: the in-app update centre includes resumable downloads and no separate updater executable: the updater is embedded in the application executable.
 name: Build and Sign Stable Release
