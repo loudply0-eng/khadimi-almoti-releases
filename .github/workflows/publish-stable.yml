@@ -1,6 +1,6 @@
 name: Build and Sign Stable Release
 
-run-name: "Khadimi signed preview ${{ inputs.release_version || '1.0.2' }}"
+run-name: "Khadimi Stable Release ${{ inputs.release_version || '1.0.2' }}"
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: "Three-part release version, for example 1.0.2"
+        description: "Official stable release version"
         required: true
         default: "1.0.2"
         type: string
@@ -19,9 +19,9 @@ on:
         default: "1.0.0"
         type: string
       publish_release:
-        description: "Publish a public GitHub Release (leave false for a signed preview)"
+        description: "Publish the official signed Stable release"
         required: true
-        default: false
+        default: true
         type: boolean
       source_ref:
         description: "Private application source branch or tag to build and verify"
@@ -58,7 +58,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           repository: loudply0-eng/khadimi-almoti
-          ref: ${{ inputs.source_ref || 'feat/verified-in-app-installer-20261126' }}
+          ref: ${{ inputs.source_ref || 'main' }}
           path: source
           ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
           persist-credentials: false
@@ -190,7 +190,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
         with:
           repository: loudply0-eng/khadimi-almoti
-          ref: ${{ inputs.source_ref || 'feat/verified-in-app-installer-20261126' }}
+          ref: ${{ inputs.source_ref || 'main' }}
           path: source
           ssh-key: ${{ secrets.KHADIMI_SOURCE_READ_KEY }}
           persist-credentials: false
