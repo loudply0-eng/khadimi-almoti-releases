@@ -4,3 +4,4 @@ No stable release is published by this workflow run.
 Retry installer integration smoke after correcting PowerShell dotnet-publish output capture.
 Clean-preview rerun after shortening the successful smoke-app lifetime and waiting for rollback test process cleanup.
 Rebuild preview after adding signed minimumSupportedVersion enforcement and policy smoke tests.
+Rebuild signed Windows preview after adding independent updater compatibility-floor enforcement and incompatible-client no-change integration test.
