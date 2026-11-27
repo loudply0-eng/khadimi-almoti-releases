@@ -1,6 +1,6 @@
 name: Build and Sign Stable Release
 
-run-name: "Khadimi Stable Release ${{ inputs.release_version || '1.0.2' }}"
+run-name: "Khadimi Stable Release ${{ inputs.release_version || '1.0.3' }}"
 
 on:
   push:
@@ -12,12 +12,12 @@ on:
       release_version:
         description: "Official stable release version"
         required: true
-        default: "1.0.2"
+        default: "1.0.3"
         type: string
       minimum_supported_version:
         description: "Oldest application version allowed to accept this update"
         required: true
-        default: "1.0.0"
+        default: "1.0.3"
         type: string
       publish_release:
         description: "Publish the official signed Stable release"
@@ -104,7 +104,7 @@ jobs:
         shell: pwsh
         working-directory: source
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.3' }}
         run: |
           $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish"
           $null = New-Item -ItemType Directory -Path $publishDir -Force
@@ -115,31 +115,14 @@ jobs:
             throw "dotnet publish failed with exit code $LASTEXITCODE."
           }
 
-          $helperProject = Join-Path $env:GITHUB_WORKSPACE "source\tools\KhadimiUpdater\KhadimiUpdater.csproj"
-          if (-not (Test-Path -LiteralPath $helperProject -PathType Leaf)) {
-            throw "The isolated updater helper project is missing."
-          }
-
-          $helperPublishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\publish-helper"
-          $null = New-Item -ItemType Directory -Path $helperPublishDir -Force
-          dotnet publish $helperProject --configuration Release --runtime win-x64 --self-contained true --output $helperPublishDir -p:PublishSingleFile=true -p:ContinuousIntegrationBuild=true "-p:Version=$env:RELEASE_VERSION"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Updater helper publish failed with exit code $LASTEXITCODE."
-          }
-
           $applicationExe = Join-Path $publishDir "خادمي المطيع.exe"
-          $helperExe = Join-Path $helperPublishDir "KhadimiUpdater.exe"
           if (-not (Test-Path -LiteralPath $applicationExe -PathType Leaf)) {
             throw "The expected single-file application executable is missing."
           }
-          if (-not (Test-Path -LiteralPath $helperExe -PathType Leaf)) {
-            throw "The expected standalone updater helper executable is missing."
-          }
 
-          Copy-Item -LiteralPath $helperExe -Destination (Join-Path $publishDir "KhadimiUpdater.exe") -Force
           $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
-          if ($publishedFiles.Count -ne 2) {
-            throw "The update package must contain exactly the application executable and updater helper."
+          if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne "خادمي المطيع.exe") {
+            throw "The official update package must contain the application executable only; no separate updater EXE is allowed."
           }
 
           $zipPath = Join-Path $env:GITHUB_WORKSPACE "artifacts\Khadimi-Windows-win-x64.zip"
@@ -206,8 +189,8 @@ jobs:
         id: metadata
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
-          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.0' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.3' }}
+          MINIMUM_SUPPORTED_VERSION: ${{ inputs.minimum_supported_version || '1.0.3' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -216,7 +199,7 @@ jobs:
           $minimumVersion = $env:MINIMUM_SUPPORTED_VERSION.Trim()
 
           if ($releaseVersion -notmatch $versionPattern -or $minimumVersion -notmatch $versionPattern) {
-            throw "Release versions must use three numeric components, such as 1.0.2."
+            throw "Release versions must use three numeric components, such as 1.0.3."
           }
           if ([Version]::Parse($releaseVersion) -lt [Version]::Parse($minimumVersion)) {
             throw "The release version cannot be below minimum_supported_version."
@@ -334,7 +317,7 @@ jobs:
       - name: Run signed installer apply and rollback integration smoke tests
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.release_version || '1.0.2' }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.0.3' }}
           SIGNING_KEY_PEM: ${{ secrets.KHADIMI_RELEASE_SIGNING_KEY }}
         run: |
           $sourceRoot = Join-Path $env:GITHUB_WORKSPACE "source"
@@ -369,7 +352,7 @@ jobs:
     name: Publish verified stable release
     # Stable publication is only permitted from the protected default branch.
     # Preview branches may build and sign artifacts but can never publish Stable.
-    if: ${{ (inputs.publish_release || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable-1.0.2]'))) && github.ref == 'refs/heads/main' }}
+    if: ${{ (inputs.publish_release || (github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-stable-1.0.3]'))) && github.ref == 'refs/heads/main' }}
     needs: sign
     runs-on: windows-latest
     timeout-minutes: 10
@@ -394,7 +377,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v${{ inputs.release_version || '1.0.2' }}
+          RELEASE_TAG: v${{ inputs.release_version || '1.0.3' }}
         run: |
           gh release create $env:RELEASE_TAG "$env:GITHUB_WORKSPACE\release-assets\Khadimi-Windows-win-x64.zip" "$env:GITHUB_WORKSPACE\release-assets\SHA256SUMS.txt" "$env:GITHUB_WORKSPACE\release-assets\latest.json" --repo loudply0-eng/khadimi-almoti-releases --title "Khadimi Al-Muti $env:RELEASE_TAG" --notes "Signed stable release. latest.json contains RSA-PSS/SHA-256 signed update metadata."
           if ($LASTEXITCODE -ne 0) {
