@@ -1,0 +1,2 @@
+Preview build trigger for private Khadimi installer branch feat/verified-in-app-installer-20261126.
+No stable release is published by this workflow run.
